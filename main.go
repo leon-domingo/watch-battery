@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -13,6 +14,47 @@ import (
 )
 
 func main() {
+
+	const (
+		defaultNotifyCmd    string = "/usr/bin/notify-send"
+		defaultLimit        int    = 10
+		defaultStatusPath   string = "/sys/class/power_supply/BAT0/status"
+		defaultCapacityPath string = "/sys/class/power_supply/BAT0/capacity"
+	)
+
+	var notifyCmd string
+	flag.StringVar(
+		&notifyCmd,
+		"notify-cmd",
+		defaultNotifyCmd,
+		"Full path to the notify command.",
+	)
+
+	var limit int
+	flag.IntVar(
+		&limit,
+		"limit",
+		defaultLimit,
+		"The battery level when the notification will happen.",
+	)
+
+	var statusPath string
+	flag.StringVar(
+		&statusPath,
+		"status-path",
+		defaultStatusPath,
+		"Full path to the file where the status of the battery is stored.",
+	)
+
+	var capacityPath string
+	flag.StringVar(
+		&capacityPath,
+		"cap-path",
+		defaultCapacityPath,
+		"Full path to the file where the current capacity of the battery is stored",
+	)
+
+	flag.Parse()
 
 	var err error
 
@@ -33,37 +75,26 @@ func main() {
 	defer lock.Unlock()
 
 	// Usage:
-	//   $ watch-battery [<limit>]
+	//   $ watch-battery [-limit=<limit>] [-status-path="/path/to/status/file"] [-cap-path="/path/to/capacity/file"]
 	//   <limit> is an integer number between 0 and 100. It's optional. The default value is 10
 	//   For example:
-	//   $ watch-battery 30
+	//   $ watch-battery -limit=30
 	//   It will notify when the battery level is equal or less than 30%
-	limit := 10
-	if len(os.Args) > 1 {
-		limit, err = strconv.Atoi(os.Args[1])
-		if err != nil {
-			os.Stderr.Write([]byte(fmt.Sprintf("The given limit (%v) is not correct. Only integer values between 0 and 100 are allowed.\n", os.Args[1])))
-			os.Exit(1)
-		}
-
-		if limit < 0 || limit > 100 {
-			os.Stderr.Write([]byte(fmt.Sprintf("The given limit (%d) is not correct. Only integer values between 0 and 100 are allowed.\n", limit)))
-			os.Exit(1)
-		}
-	} else {
-		os.Stdout.Write([]byte(fmt.Sprintf("A default LIMIT of %d%% will be used\n", limit)))
+	if limit < 0 || limit > 100 {
+		os.Stderr.Write([]byte(fmt.Sprintf("The given limit (%d) is not correct. Only integer values between 0 and 100 are allowed.\n", limit)))
+		os.Exit(1)
 	}
 
 	var wg sync.WaitGroup
 	wg.Add(1)
 	defer wg.Done()
 
-	go func(limit int) {
+	go func() {
 		reachedLimit := false
 		charging := false
 		n := 0
 		for {
-			fileStatus, err := os.Open("/sys/class/power_supply/BAT0/status")
+			fileStatus, err := os.Open(statusPath)
 			if err != nil {
 				os.Stderr.Write([]byte("Error opening file of battery status\n"))
 				os.Exit(1)
@@ -82,7 +113,7 @@ func main() {
 
 				charging = false
 
-				fileCapacity, err := os.Open("/sys/class/power_supply/BAT0/capacity")
+				fileCapacity, err := os.Open(capacityPath)
 				if err != nil {
 					os.Stderr.Write([]byte("Error opening file with battery capacity\n"))
 					os.Exit(1)
@@ -112,7 +143,7 @@ func main() {
 						}
 
 						argv := []string{
-							"/usr/bin/notify-send",
+							notifyCmd,
 							"--urgency=normal",
 							"--expire-time=0",
 							"--app-name=Battery",
@@ -138,7 +169,7 @@ func main() {
 
 			time.Sleep(2 * time.Second)
 		}
-	}(limit)
+	}()
 
 	wg.Wait()
 }
