@@ -161,8 +161,13 @@ func main() {
 					n++
 				}
 
-				now := fmt.Sprintf("%s", time.Now().Format(time.RFC3339))
-				io.WriteString(os.Stdout, fmt.Sprintf("%s %d%%\n", now, perc))
+				io.WriteString(
+					os.Stdout,
+					fmt.Sprintf("%s %d%%\n",
+						time.Now().Format(time.RFC3339),
+						perc,
+					),
+				)
 
 				// perc-limit
 				if m != 0 && m%10 == 0 {
