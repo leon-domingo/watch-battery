@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -16,6 +17,7 @@ import (
 func main() {
 
 	const (
+		dischargingStatus   string = "Discharging"
 		defaultNotifyCmd    string = "/usr/bin/notify-send"
 		defaultLimit        int    = 10
 		defaultStatusPath   string = "/sys/class/power_supply/BAT0/status"
@@ -61,14 +63,14 @@ func main() {
 	// handle lock file
 	lock, err := lockfile.New(filepath.Join(os.TempDir(), ".watch-battery.lock"))
 	if err != nil {
-		os.Stderr.Write([]byte("Lock is already acquired\n"))
+		io.WriteString(os.Stderr, "Lock is already acquired\n")
 		os.Exit(1)
 	}
 
 	// trying to acquire the lock
 	err = lock.TryLock()
 	if err != nil {
-		os.Stderr.Write([]byte("Error trying to acquire the lock\n"))
+		io.WriteString(os.Stderr, "Error trying to acquire the lock\n")
 		os.Exit(1)
 	}
 
@@ -81,7 +83,7 @@ func main() {
 	//   $ watch-battery -limit=30
 	//   It will notify when the battery level is equal or less than 30%
 	if limit < 0 || limit > 100 {
-		os.Stderr.Write([]byte(fmt.Sprintf("The given limit (%d) is not correct. Only integer values between 0 and 100 are allowed.\n", limit)))
+		io.WriteString(os.Stderr, fmt.Sprintf("The given limit (%d) is not correct. Only integer values between 0 and 100 are allowed.\n", limit))
 		os.Exit(1)
 	}
 
@@ -93,36 +95,37 @@ func main() {
 		reachedLimit := false
 		charging := false
 		n := 0
+		m := 0
 		for {
 			fileStatus, err := os.Open(statusPath)
 			if err != nil {
-				os.Stderr.Write([]byte("Error opening file of battery status\n"))
+				io.WriteString(os.Stderr, "Error opening file of battery status\n")
 				os.Exit(1)
 			}
 
 			var dataStatus = make([]byte, 15)
 			_, err = fileStatus.Read(dataStatus)
 			if err != nil {
-				os.Stderr.Write([]byte("Error reading battery status\n"))
+				io.WriteString(os.Stderr, "Error reading battery status\n")
 				os.Exit(1)
 			}
 			fileStatus.Close()
 
 			// only on DISCHARGING status
-			if strings.Trim(string(dataStatus), "\n\x00 ") == "Discharging" {
+			if strings.Trim(string(dataStatus), "\n\x00 ") == dischargingStatus {
 
 				charging = false
 
 				fileCapacity, err := os.Open(capacityPath)
 				if err != nil {
-					os.Stderr.Write([]byte("Error opening file with battery capacity\n"))
+					io.WriteString(os.Stderr, "Error opening file with battery capacity\n")
 					os.Exit(1)
 				}
 
 				dataCapacity := make([]byte, 5)
 				_, err = fileCapacity.Read(dataCapacity)
 				if err != nil {
-					os.Stderr.Write([]byte("Error reading battery capacity\n"))
+					io.WriteString(os.Stderr, "Error reading battery capacity\n")
 					os.Exit(1)
 				}
 				fileCapacity.Close()
@@ -158,16 +161,23 @@ func main() {
 					n++
 				}
 
-				os.Stdout.Write([]byte(fmt.Sprintf("%d%% (until limit %d%%)\n", perc, perc-limit)))
+				now := fmt.Sprintf("%s", time.Now().Format(time.RFC3339))
+				io.WriteString(os.Stdout, fmt.Sprintf("%s %d%%\n", now, perc))
+
+				// perc-limit
+				if m != 0 && m%10 == 0 {
+					io.WriteString(os.Stdout, fmt.Sprintf("...%d%%\n", perc-limit))
+				}
 			} else {
 				if !charging {
 					// write just one line to STDOUT
-					os.Stdout.Write([]byte("---Charging---\n"))
+					io.WriteString(os.Stdout, "---Charging---\n")
 					charging = true
 				}
 			}
 
 			time.Sleep(2 * time.Second)
+			m++
 		}
 	}()
 
